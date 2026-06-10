@@ -4,7 +4,9 @@ Open-source, multi-agent triage for **GitHub Advanced Security** alerts (Dependa
 
 The bot reads your security ticket queue, gathers evidence from GitHub (read-only), runs an LLM pipeline (advisory parsing, reachability, org impact, critic/prosecutor), and posts **human-style** Jira comments with optional status transitions.
 
-Inspired by production security automation patterns; designed to be **self-hosted** via GitHub Actions or local CLI.
+> **Sibling project:** [appsec-triage](https://github.com/safernandez666/appsec-triage) is the **GitHub-native** edition (Issues + alert dismiss, `httpx`-only, `--offline` demo). **This repo** is the **Jira/enterprise** edition with the same Z1→Z4 defensive pipeline. See [docs/RELATIONSHIP.md](docs/RELATIONSHIP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**Principle:** the LLM never acts alone — truth table, prosecutor, and critic sit around every verdict.
 
 ## Features
 
@@ -25,6 +27,7 @@ cd ghas-auto-triage
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp ghas_llm.yaml.example ghas_llm.yaml
+cp .env.example .env    # optional — fill keys (or export manually)
 ```
 
 ### 2. Configure `ghas_llm.yaml`
@@ -94,6 +97,8 @@ Daily schedule runs at **07:30 UTC** (adjust cron in `.github/workflows/triage.y
 
 ## Architecture
 
+Z1 routing → Z2 investigation → Z3 judgment → Z4 Jira output. Full mapping in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```mermaid
 flowchart LR
   Jira[Jira queue] --> Bot[GHAS Auto-Triage]
@@ -103,6 +108,17 @@ flowchart LR
   Bot --> Jira
   Memory --> Git[Git commit on branch]
 ```
+
+### vs appsec-triage
+
+| Capability | appsec-triage | ghas-auto-triage |
+|------------|---------------|------------------|
+| Output | GitHub Issues | Jira comments + transitions |
+| `--offline` fixtures | Yes | `--fixture` + `--llm-smoke` |
+| `--repos` batch | Yes | Jira queue (`triage_max_results: 0`) |
+| Human feedback loop | No | Yes (`.human_feedback.jsonl`) |
+| Org hunter / skills | No | Yes |
+| Git memory persist | Artifact only (docs) | Workflow job + SSH |
 
 ## Jira ticket format
 

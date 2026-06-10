@@ -10,3 +10,4 @@ build/
 .processed_alerts.json
 .env
 .env.*
+!.env.example
