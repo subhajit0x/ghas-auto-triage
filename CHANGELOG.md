@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 — 2026-06-08
+
+- README: multi-agent USPs, token-efficiency story, badges
+- PyPI metadata and GitHub repo description/topics
+
 ## 0.1.0 — 2026-06-08
 
 Initial public release on [subhajit0x/ghas-auto-triage](https://github.com/subhajit0x/ghas-auto-triage).

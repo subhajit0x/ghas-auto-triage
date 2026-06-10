@@ -1,155 +1,118 @@
 # GHAS Auto-Triage
 
-Open-source, multi-agent triage for **GitHub Advanced Security** alerts (Dependabot, CodeQL, secret scanning) with **Jira** integration.
+**Multi-agent GHAS triage for Jira — fewer LLM calls, fewer false positives, less alert fatigue.**
 
-The bot reads your security ticket queue, gathers evidence from GitHub (read-only), runs an LLM pipeline (advisory parsing, reachability, org impact, critic/prosecutor), and posts **human-style** Jira comments with optional status transitions.
+[![Tests](https://img.shields.io/badge/tests-191%20passed-brightgreen)](tests/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-> **Sibling project:** [appsec-triage](https://github.com/safernandez666/appsec-triage) is the **GitHub-native** edition (Issues + alert dismiss, `httpx`-only, `--offline` demo). **This repo** is the **Jira/enterprise** edition with the same Z1→Z4 defensive pipeline. See [docs/RELATIONSHIP.md](docs/RELATIONSHIP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Open-source defensive triage for **Dependabot**, **CodeQL**, and **secret scanning**. Reads your Jira security queue, gathers **deterministic** evidence from GitHub (read-only), runs a **multi-agent** LLM pipeline, and posts **one-line human** comments with optional status transitions.
 
-**Principle:** the LLM never acts alone — truth table, prosecutor, and critic sit around every verdict.
+> The **LLM never acts alone.** Truth table, prosecutor, and critic wrap every verdict. Most alerts never reach the judge.
 
-## Features
+Sibling: [appsec-triage](https://github.com/safernandez666/appsec-triage) (GitHub Issues edition, `httpx`-only). This repo is the **Jira / enterprise** edition — [docs/RELATIONSHIP.md](docs/RELATIONSHIP.md).
 
-- **Jira-first workflow** — poll Jira for GHAS tickets, fetch matching alerts on target repos
-- **Agentic evidence pipeline** — repo profile, code search, blame, org-wide usage, global memory
-- **Human feedback loop** — learns from replies after bot comments
-- **Cross-run memory** — JSONL history committed to your repo branch (optional)
-- **Dry run** — safe smoke tests without writing to Jira
-- **Tier/confidence gates** — transitions only when floors are met
+---
+
+## Why teams use it
+
+| USP | What you get |
+|-----|----------------|
+| **9 specialized agents** | Advisory, Evidence, Org Hunter, Judge, Prosecutor, Critic, Comment Scanner, Human Feedback, Global Memory — each with a narrow job |
+| **Token-efficient by design** | Truth table **forces** verdicts without LLM; org memory **skips** judge when ≥3 repos agree; fast-path closes fixed/missing alerts with **zero** LLM; dedup skips redundant comments |
+| **Jira-native** | Poll VM/security queue → comment → transition when confidence + tier floors pass |
+| **Human-in-the-loop** | Learns from analyst replies; never talks over a human (`human_after_bot`) |
+| **Cross-run memory** | `.triage_history.jsonl` + `.human_feedback.jsonl`, git-persisted between runs |
+| **Production guardrails** | Tier-1 highest floors; `dry_run`; prosecutor only **downgrades**; temperature 0 |
+| **Self-hosted** | GitHub Actions + YAML config — no SaaS lock-in |
+
+---
+
+## Multi-agent pipeline (Z1 → Z4)
+
+```
+Z1 Routing        →  skip / fast-path (no LLM)
+Z2 Investigation  →  Advisory + Evidence + Truth Table (LLM extract only)
+Z3 Judgment       →  Judge → Prosecutor → Critic → Consistency
+Z4 Output         →  Jira comment + optional transition
+```
+
+| Agent | LLM? | Saves tokens by… |
+|-------|------|------------------|
+| **Truth table** | No | Force FP/TP before any judge call |
+| **Global memory** | No | Reuse org CVE consensus — skip judge |
+| **Advisory** | Extract only | Pull API names; never decides verdict |
+| **Evidence** | No | Code search, manifests, blame — facts only |
+| **Org hunter** | Optional | Infra/deploy context without re-prompting judge |
+| **Final judge** | Yes | One structured JSON verdict per alert |
+| **Prosecutor** | Optional | Deterministic checks first; LLM only if needed |
+| **Critic** | No | Floor check — degrade low confidence |
+| **Comment scanner** | No | Skip re-triage when human already replied |
+
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+---
 
 ## Quick start
 
-### 1. Clone and install
-
 ```bash
-git clone https://github.com/subhajit0x/ghas-auto-triage.git
-cd ghas-auto-triage
+git clone https://github.com/subhajit0x/ghas-auto-triage.git && cd ghas-auto-triage
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp ghas_llm.yaml.example ghas_llm.yaml
-cp .env.example .env    # optional — fill keys (or export manually)
+cp .env.example .env
 ```
 
-### 2. Configure `ghas_llm.yaml`
+**Configure** `ghas_llm.yaml`: GitHub org, Jira URL, project key, tool/asset custom field IDs.
 
-Edit at minimum:
-
-| Setting | Description |
-|---------|-------------|
-| `global.github.org` | Your GitHub organization |
-| `integrations.jira.base_url` | e.g. `https://your-company.atlassian.net` |
-| `integrations.jira.triage_project` | Jira project key (e.g. `SEC`) |
-| `integrations.jira.tool_custom_field` | Jira custom field ID for alert tool type |
-| `integrations.jira.asset_custom_field` | Jira custom field ID for `owner/repo` |
-
-Map your Jira **Tool** and **Asset** fields to Dependabot/CodeQL/secret-scanning and `owner/repo`.
-
-### 3. Set environment variables
+**Env vars:** `OPENAI_API_KEY`, `GHAS_TRIAGE_GITHUB_TOKEN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export GHAS_TRIAGE_GITHUB_TOKEN="github_pat_..."   # Security events + Contents on target repos
-export JIRA_EMAIL="you@company.com"
-export JIRA_API_TOKEN="..."
-```
-
-Optional:
-
-- `ORG_SSH_KEY_PATH` — SSH private key for cloning private repos during context gathering
-- `SLACK_WEBHOOK_URL` — enable Slack in YAML and set this secret
-- `JIRA_SECRET_NAME` + AWS creds — load Jira creds from AWS Secrets Manager JSON `{"email","token"}`
-
-### 4. Run locally
-
-```bash
-# LLM connectivity check
-python -m ghas_llm --llm-smoke
-
-# Jira-first full queue (respects dry_run in YAML)
-python -m ghas_llm --jira-first --repo-root .
-
-# Single ticket debug
+python -m ghas_llm --llm-smoke                    # 1-token LLM ping
+python -m ghas_llm --jira-first --repo-root .  # full Jira queue
 python -m ghas_llm.local_dry_run --issue SEC-123
 ```
 
-## GitHub Actions deploy
+---
 
-1. Fork this repo (or use your own copy).
-2. Add repository secrets:
+## GitHub Actions (daily triage)
 
-| Secret | Required | Purpose |
-|--------|----------|---------|
-| `OPENAI_API_KEY` | Yes | LLM triage |
-| `GHAS_TRIAGE_GITHUB_TOKEN` | Yes | GitHub API (alerts, code search) |
-| `JIRA_EMAIL` | Yes | Jira API |
-| `JIRA_API_TOKEN` | Yes | Jira API |
-| `ORG_SSH_KEY` | Optional | Clone private repos over SSH |
-| `SLACK_WEBHOOK_URL` | Optional | Run summaries |
+Secrets: `OPENAI_API_KEY`, `GHAS_TRIAGE_GITHUB_TOKEN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`
 
-3. Copy `ghas_llm.yaml.example` → commit as `ghas_llm.yaml` with your Jira field IDs, **or** let the workflow copy the example on each run and use repo variables for overrides.
+Run workflow with `dry_run=false`, `triage_limit=0`, `auto_transition=true`.
 
-4. Run **Actions → ghas-auto-triage → Run workflow** with:
-   - `dry_run=false`
-   - `triage_limit=0` (full queue)
-   - `auto_transition=true`
+Memory files auto-commit via `persist-memory` job (SSH or `GITHUB_TOKEN`). Disable: `GHAS_LLM_MEMORY_GIT_PUSH=false`.
 
-Daily schedule runs at **07:30 UTC** (adjust cron in `.github/workflows/triage.yml`).
-
-## Architecture
-
-Z1 routing → Z2 investigation → Z3 judgment → Z4 Jira output. Full mapping in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-```mermaid
-flowchart LR
-  Jira[Jira queue] --> Bot[GHAS Auto-Triage]
-  Bot --> GitHub[GitHub API read-only]
-  Bot --> LLM[OpenAI]
-  Bot --> Memory[JSONL memory]
-  Bot --> Jira
-  Memory --> Git[Git commit on branch]
-```
-
-### vs appsec-triage
-
-| Capability | appsec-triage | ghas-auto-triage |
-|------------|---------------|------------------|
-| Output | GitHub Issues | Jira comments + transitions |
-| `--offline` fixtures | Yes | `--fixture` + `--llm-smoke` |
-| `--repos` batch | Yes | Jira queue (`triage_max_results: 0`) |
-| Human feedback loop | No | Yes (`.human_feedback.jsonl`) |
-| Org hunter / skills | No | Yes |
-| Git memory persist | Artifact only (docs) | Workflow job + SSH |
+---
 
 ## Jira ticket format
 
-Each ticket should identify:
-
-1. **Tool** — `dependabot`, `code-scanning`, or `secret-scanning` (via your configured custom field)
+1. **Tool** — `dependabot` \| `code-scanning` \| `secret-scanning`
 2. **Asset** — `owner/repo`
-3. **Alert number** — in description or a dedicated field (parsed from GitHub alert URLs)
+3. **Alert #** — in description or parsed from GitHub URL
 
-Bot state is stored in Jira issue property `ghas-triage.agent.state`. Comments use an HTML marker `<!-- ghas-triage-agent ... -->` for idempotency.
+State: Jira property `ghas-triage.agent.state` · Marker: `<!-- ghas-triage-agent ... -->`
 
-## Memory files
+---
 
-| File | Purpose |
-|------|---------|
-| `.triage_history.jsonl` | Cross-run org memory (CVE/package consensus) |
-| `.human_feedback.jsonl` | Learned human corrections |
+## vs [appsec-triage](https://github.com/safernandez666/appsec-triage)
 
-The workflow can commit these after each run (`persist-memory` job). Disable with repo variable `GHAS_LLM_MEMORY_GIT_PUSH=false`.
+| | appsec-triage | **ghas-auto-triage** |
+|---|---------------|----------------------|
+| Output | GitHub Issues | **Jira** |
+| Deps | `httpx` | `openai` + `yaml` |
+| Human feedback | — | **Yes** |
+| Org hunter | — | **Yes** |
+| Git memory | artifact | **commit on branch** |
 
-## Testing
+---
+
+## Tests & license
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -q
+pytest tests/ -q   # 191 tests
 ```
 
-## License
+Apache 2.0 · [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md)
 
-Apache License 2.0 — see [LICENSE](LICENSE).
-
-## Contributing
-
-Issues and PRs welcome at [github.com/subhajit0x/ghas-auto-triage](https://github.com/subhajit0x/ghas-auto-triage).
+**Author:** [Subhajit Saha](https://github.com/subhajit0x)

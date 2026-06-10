@@ -4,13 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghas-auto-triage"
-version = "0.1.0"
-description = "Open-source multi-agent GHAS alert triage with Jira integration"
+version = "0.1.1"
+description = "Multi-agent GHAS triage for Jira — token-efficient pipeline with truth table, prosecutor, critic, and org memory"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
-authors = [{ name = "Subhajit Saha" }]
-keywords = ["security", "ghas", "dependabot", "codeql", "jira", "llm", "triage"]
+authors = [{ name = "Subhajit Saha", email = "subhajit0x@users.noreply.github.com" }]
+keywords = [
+  "security", "ghas", "github-advanced-security", "dependabot", "codeql",
+  "secret-scanning", "jira", "devsecops", "multi-agent", "llm", "triage",
+  "vulnerability-management", "appsec", "automation",
+]
 dependencies = [
   "pyyaml>=6",
   "openai>=1.40.0",
