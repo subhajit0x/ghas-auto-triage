@@ -1,0 +1,15 @@
+flowchart TD
+  A[Schedule or manual GitHub Actions] --> B[JQL: VM To Do / In Progress GHAS tools]
+  B --> C[Per ticket: parse repo + alert #]
+  C --> D{Fetch GHAS alert}
+  D -->|403/404| E[Post fetch-error comment]
+  D -->|fixed/withdrawn| F[Fast path: close comment, no LLM]
+  D -->|OK| G[Evidence layers + truth table]
+  G --> H{force_verdict?}
+  H -->|yes| I[Deterministic FP - skip Judge]
+  H -->|no| J[Judge + Prosecutor + Critic]
+  J --> K[Consistency gate]
+  K --> L{Post comment?}
+  L --> M{Auto-transition?}
+  M -->|confidence >= tier floor| N[Jira status change]
+  M -->|else| O[Leave ticket open]

@@ -1,0 +1,9 @@
+mappings:
+  - kind: dependabot
+    number: 1
+    jira_key: SEC-123
+    external_finding_id: ""
+  - kind: code_scanning
+    number: 2
+    jira_key: SEC-124
+    external_finding_id: ""

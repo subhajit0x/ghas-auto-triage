@@ -1,0 +1,13 @@
+[
+  {
+    "jira_key": "SEC-0000",
+    "human_verdict": "leave_open"
+  },
+  {
+    "owner": "example-org",
+    "repo": "example-service",
+    "kind": "dependabot",
+    "number": 1,
+    "human_verdict": "false_positive"
+  }
+]

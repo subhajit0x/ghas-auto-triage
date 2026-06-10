@@ -1,0 +1,146 @@
+name: ghas-auto-triage
+
+on:
+  schedule:
+    - cron: "30 7 * * *"
+  workflow_dispatch:
+    inputs:
+      jira_first:
+        description: "Jira-first mode (recommended)"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Dry run — no Jira comments or transitions"
+        type: boolean
+        default: false
+      triage_limit:
+        description: "Cap tickets for this run (0 = full queue)"
+        type: number
+        default: 0
+      auto_transition:
+        description: "Move Jira tickets when confidence/tier floors are met"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ghas-auto-triage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    outputs:
+      jira_first: ${{ steps.mode.outputs.jira_first }}
+    permissions:
+      contents: read
+      security-events: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode
+        id: mode
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "jira_first=true" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "jira_first=${{ inputs.jira_first }}" >> "$GITHUB_OUTPUT"
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure org SSH key (optional)
+        env:
+          ORG_SSH_KEY: ${{ secrets.ORG_SSH_KEY }}
+        run: bash scripts/setup_org_ssh.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Prepare config
+        run: cp ghas_llm.yaml.example ghas_llm.yaml
+
+      - name: Run triage
+        env:
+          ORG_SSH_KEY_PATH: ${{ env.ORG_SSH_KEY_PATH }}
+          GHAS_TRIAGE_GITHUB_TOKEN: ${{ secrets.GHAS_TRIAGE_GITHUB_TOKEN }}
+          GHAS_LLM_GITHUB_TOKEN: ${{ secrets.GHAS_LLM_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          GHAS_LLM_CONFIG: ${{ github.workspace }}/ghas_llm.yaml
+          GHAS_LLM_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GHAS_LLM_DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+          GHAS_LLM_TRIAGE_MAX_RESULTS: ${{ github.event_name == 'workflow_dispatch' && inputs.triage_limit > 0 && inputs.triage_limit || '' }}
+          GHAS_LLM_AUTO_TRANSITION: ${{ github.event_name == 'workflow_dispatch' && (inputs.auto_transition && 'true' || 'false') || '' }}
+          GHAS_LLM_SLACK_DISABLE: ${{ vars.GHAS_LLM_SLACK_DISABLE }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GHAS_TRIAGE_GITHUB_TOKEN:-}" ]; then
+            export GITHUB_TOKEN="${GHAS_TRIAGE_GITHUB_TOKEN}"
+          fi
+          EXTRA=""
+          if [ "${{ steps.mode.outputs.jira_first }}" = "true" ]; then
+            EXTRA="--jira-first"
+          fi
+          python -m ghas_llm ${EXTRA} --repo-root "${{ github.workspace }}"
+
+      - name: Upload triage memory artifact
+        if: steps.mode.outputs.jira_first == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: triage-memory-${{ github.run_id }}
+          path: |
+            .triage_history.jsonl
+            .human_feedback.jsonl
+          include-hidden-files: true
+          if-no-files-found: error
+
+  persist-memory:
+    needs: triage
+    if: needs.triage.outputs.jira_first == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure org SSH key (optional)
+        env:
+          ORG_SSH_KEY: ${{ secrets.ORG_SSH_KEY }}
+        run: bash scripts/setup_org_ssh.sh
+
+      - name: Download triage memory artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: triage-memory-${{ github.run_id }}
+          path: .
+
+      - name: Persist triage memory on branch
+        env:
+          GHAS_LLM_MEMORY_GIT_PUSH: ${{ vars.GHAS_LLM_MEMORY_GIT_PUSH }}
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          ORG_SSH_KEY_PATH: ${{ env.ORG_SSH_KEY_PATH }}
+          GHAS_LLM_GIT_PUSH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${GHAS_LLM_MEMORY_GIT_PUSH:-true}" = "false" ]; then
+            echo "Skipping memory git push."
+            exit 0
+          fi
+          bash scripts/persist_memory_git.sh \
+            .triage_history.jsonl \
+            .human_feedback.jsonl \
+            "${{ github.run_id }}"

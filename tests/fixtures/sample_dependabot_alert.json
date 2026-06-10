@@ -1,0 +1,15 @@
+{
+  "number": 999,
+  "state": "open",
+  "dependency": {
+    "package": {
+      "ecosystem": "pip",
+      "name": "urllib3"
+    }
+  },
+  "security_vulnerability": {
+    "severity": "medium",
+    "vulnerable_version_range": "< 2.0.0"
+  },
+  "manifest_path": "requirements.txt"
+}

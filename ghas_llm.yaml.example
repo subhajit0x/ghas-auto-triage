@@ -1,0 +1,101 @@
+global:
+  dry_run: false
+  max_alerts_per_kind: 25
+  github:
+    token_env: GHAS_TRIAGE_GITHUB_TOKEN
+    api_version: "2022-11-28"
+    org: your-github-org
+  llm:
+    model: gpt-4o-mini
+    extract_model: gpt-4o-mini
+    judge_model: gpt-4o-mini
+    critic_model: gpt-4o-mini
+    prosecutor_model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+    temperature: 0
+
+alerts:
+  dependabot: true
+  code_scanning: true
+  secret_scanning: true
+
+agent:
+  require_code_validation: true
+  min_confidence_for_status_change: high
+  max_context_chars: 16000
+  auto_resolve_enabled: false
+  jira_comment_style: brief_conclusion
+  auto_transition: true
+  transition_targets:
+    action_needed: IN_PROGRESS
+    false_positive: false_positive
+    fixed: Closed
+    withdrawn: Closed
+    missing_alert: Closed
+  review_passes: 2
+  prefer_github_api_context: true
+  clone_context_fallback: false
+  agentic_mode: true
+  dedup_comments: false
+  production_trust:
+    min_confidence_for_action: 70
+    tier_floors:
+      tier_1_critical:
+        post: 80
+        transition: 95
+      tier_2_supporting:
+        post: 75
+        transition: 90
+      tier_3_internal:
+        post: 65
+        transition: 85
+      tier_4_archived:
+        post: 55
+        transition: 75
+  critic:
+    enabled: true
+  triage_history_file: .triage_history.jsonl
+  human_feedback_file: .human_feedback.jsonl
+
+memory_store:
+  max_history_lines: 15000
+  max_feedback_lines: 3000
+
+dedup:
+  enabled: false
+  skip_triage_if_processed: false
+  state_file: .processed_alerts.json
+
+integrations:
+  github:
+    post_triage_comments: false
+    comment_marker: "<!-- ghas-llm -->"
+
+  slack:
+    enabled: false
+    webhook_env: SLACK_WEBHOOK_URL
+    notify_in_dry_run: false
+
+  jira:
+    enabled: true
+    base_url: https://your-company.atlassian.net
+    email_env: JIRA_EMAIL
+    api_token_env: JIRA_API_TOKEN
+    # Optional: pull creds from AWS Secrets Manager JSON {"email":"...","token":"..."}
+    # aws_secret_name: your-org/jira/ghas-triage
+    # aws_secret_region: us-east-1
+    mapping_file: alert_to_issue.yaml
+    comment_each_triage: true
+    triage_existing_issues: false
+    triage_project: SEC
+    triage_max_results: 0
+    jql_order_by: updated ASC
+    tool_custom_field: customfield_10001
+    asset_custom_field: customfield_10002
+    tool_values:
+      - dependabot
+      - code-scanning
+      - secret-scanning
+    include_status_categories:
+      - To Do
+      - In Progress

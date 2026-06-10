@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghas-auto-triage"
+version = "0.1.0"
+description = "Open-source multi-agent GHAS alert triage with Jira integration"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Subhajit Saha" }]
+keywords = ["security", "ghas", "dependabot", "codeql", "jira", "llm", "triage"]
+dependencies = [
+  "pyyaml>=6",
+  "openai>=1.40.0",
+  "boto3>=1.34.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+ghas-triage = "ghas_llm.cli:main"
+ghas-llm = "ghas_llm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/subhajit0x/ghas-auto-triage"
+Repository = "https://github.com/subhajit0x/ghas-auto-triage"
+Issues = "https://github.com/subhajit0x/ghas-auto-triage/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

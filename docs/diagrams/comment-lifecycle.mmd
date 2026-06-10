@@ -1,0 +1,12 @@
+stateDiagram-v2
+  [*] --> NoBotComment
+  NoBotComment --> PostFresh: full agentic triage
+  PostFresh --> BotCommented
+  BotCommented --> Validate: next run
+  Validate --> Unchanged: same conclusion
+  Validate --> DriftPosted: changed with high confidence
+  Validate --> ConflictNeedsReview: changed with weak evidence
+  Unchanged --> BotCommented
+  BotCommented --> HumanResponded: human comments after bot
+  HumanResponded --> LearnAndSkip: record feedback, no bot comment
+  LearnAndSkip --> HumanResponded

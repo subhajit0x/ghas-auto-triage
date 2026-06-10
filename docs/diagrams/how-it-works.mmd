@@ -1,0 +1,33 @@
+flowchart TD
+  A[GitHub Actions schedule or manual run] --> B[Read Jira security queue]
+  B --> C[For each To Do / In Progress GHAS ticket]
+  C --> D[Parse tool, repo, alert number]
+  D --> E[Fetch GHAS alert with GHAS_TRIAGE_GITHUB_TOKEN]
+  E -->|Dependabot fixed/withdrawn/missing| FP[Fast path: 1-line comment + close no LLM]
+  E -->|fetch fails| F[Post 1-line fetch/error note]
+  E -->|fetch succeeds| G[Agentic evidence layers]
+  G --> H[Repo profile]
+  G --> I[Advisory/API extraction]
+  G --> J[Code search + manifests + lockfiles]
+  G --> K[README + Docker + CI + runtime hints]
+  G --> L[Blame / last commit authors]
+  G --> M[Org-wide package usage]
+  G --> OH[Org-wide deploy/infra discovery]
+  G --> GM[Global memory triage history]
+  G --> S[External Skills Library]
+  H --> N[Evidence matrix]
+  I --> N
+  J --> N
+  K --> N
+  L --> N
+  M --> N
+  OH --> N
+  GM --> N
+  S --> N
+  N --> TT[Pre-flight truth table tier + force verdict]
+  TT --> O[Final Judge LLM or force verdict no LLM]
+  O --> PR[ProsecutorAgent adversarial review]
+  PR --> X[Silent CriticAgent]
+  X --> P[Consistency gate]
+  P --> Q[Post, skip, learn, and transition]
+  Q --> R[Append triage history + update Jira issue property]
